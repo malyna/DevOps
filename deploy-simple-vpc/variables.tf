@@ -20,3 +20,7 @@ variable "use-nat-gateway" {
   type = "string"
   default = "true"
 }
+
+variable "nat-box-ami" {
+  type = "string"
+}
