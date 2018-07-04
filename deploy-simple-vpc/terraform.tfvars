@@ -1,0 +1,6 @@
+region = "eu-central-1"
+access-key = "access-key-random"
+secret-key = "secret-key-random"
+build-tag = "amalinowski"
+use-nat-gateway = "true"
+nat-box-ami = "ami-da526d31"
