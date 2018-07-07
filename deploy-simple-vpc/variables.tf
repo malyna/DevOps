@@ -4,6 +4,10 @@ variable "build-tag" {
   default = "amalinowski"
 }
 
+variable "owner" {
+  type = "string"
+}
+
 variable "region" {
   type = "string"
 }
