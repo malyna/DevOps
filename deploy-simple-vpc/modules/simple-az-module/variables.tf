@@ -2,11 +2,7 @@ variable "vpc_id" {
   type = "string"
 }
 
-variable "zone_name" {
-  type = "string"
-}
-
-variable "ig_id" {
+variable "az_name" {
   type = "string"
 }
 
@@ -15,6 +11,10 @@ variable "activate" {
 }
 
 variable "owner" {
+  type = "string"
+}
+
+variable "public_route_table_id" {
   type = "string"
 }
 

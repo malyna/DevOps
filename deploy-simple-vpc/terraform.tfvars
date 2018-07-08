@@ -1,5 +1,4 @@
-region = "us-east-1"
-access-key = "random-key"
-secret-key = "random-secret"
+region = "eu-central-1"
 owner = "amalinowski"
 nat-box-ami = "some-ami"
+user_profile = "artur-dev"

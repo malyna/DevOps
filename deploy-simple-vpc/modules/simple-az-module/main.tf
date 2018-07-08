@@ -4,16 +4,18 @@ data "aws_vpc" "selected" {
 }
 
 data "aws_availability_zone" "selected" {
-  name = "${var.zone_name}"
+  name = "${var.az_name}"
 }
 
-data "aws_internet_gateway" "selected" {
-  internet_gateway_id = "${var.ig_id}"
+data "aws_route_table" "simple-public" {
+  route_table_id = "${var.public_route_table_id}"
 }
 
 locals {
   active = "${var.activate == "true"}"
 }
+
+// region SUBNETS
 
 resource "aws_subnet" "simple-public" {
   count = "${local.active ? 1 : 0}"
@@ -49,9 +51,14 @@ resource "aws_subnet" "simple-private-db" {
   }
 }
 
+// endregion
+
 resource "aws_eip" "simple-nat-ip" {
   count = "${local.active ? 1 : 0}"
   vpc = true
+  tags {
+    Owner = "${var.owner}"
+  }
 }
 
 // region NAT GATEWAY
@@ -90,70 +97,40 @@ resource "aws_instance" "simple-nat-box" {
 
 //region ROUTE TABLES
 
-resource "aws_route_table" "simple-public-route-table" {
-  count = "${local.active ? 1 : 0}"
-  vpc_id = "${data.aws_vpc.selected.id}"
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = "${data.aws_internet_gateway.selected.id}"
-  }
-  tags {
-    Owner = "${var.owner}"
-    Name = "${var.owner}-public"
-  }
-}
-
-resource "aws_route_table" "simple-private-route-table" {
+resource "aws_route_table" "simple-private" {
   count = "${local.active ? 1 : 0}"
   vpc_id = "${data.aws_vpc.selected.id}"
 
   tags {
     Owner = "${var.owner}"
-    Name = "${var.owner}-private"
+    Name = "${var.owner}-private-${var.name_suffix}"
   }
 }
 
 resource "aws_route" "nat-gateway-route" {
   count = "${local.active && var.use_nat_gateway == "true" ? 1 : 0}"
-  route_table_id = "${aws_route_table.simple-private-route-table.id}"
+  route_table_id = "${aws_route_table.simple-private.id}"
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id = "${aws_nat_gateway.simple-nat-gateway.id}"
 }
 
 resource "aws_route" "nat-instance-route" {
   count = "${local.active && var.use_nat_gateway != "true" ? 1 : 0}"
-  route_table_id = "${aws_route_table.simple-private-route-table.id}"
+  route_table_id = "${aws_route_table.simple-private.id}"
   destination_cidr_block = "0.0.0.0/0"
   instance_id = "${aws_instance.simple-nat-box.id}"
 }
 
-resource "aws_route_table" "simple-private-db-route-table" {
-  count = "${local.active ? 1 : 0}"
-  vpc_id = "${data.aws_vpc.selected.id}"
-
-  tags {
-    Owner = "${var.owner}"
-    Name = "${var.owner}-private-db"
-  }
-}
-
 resource "aws_route_table_association" "simple-public-association" {
   count = "${local.active ? 1 : 0}"
-  route_table_id = "${aws_route_table.simple-public-route-table.id}"
+  route_table_id = "${data.aws_route_table.simple-public.id}"
   subnet_id = "${aws_subnet.simple-public.id}"
 }
 
 resource "aws_route_table_association" "simple-private-association" {
   count = "${local.active ? 1 : 0}"
-  route_table_id = "${aws_route_table.simple-private-route-table.id}"
+  route_table_id = "${aws_route_table.simple-private.id}"
   subnet_id = "${aws_subnet.simple-private.id}"
-}
-
-resource "aws_route_table_association" "simple-private-db-association" {
-  count = "${local.active ? 1 : 0}"
-  route_table_id = "${aws_route_table.simple-private-db-route-table.id}"
-  subnet_id = "${aws_subnet.simple-private-db.id}"
 }
 
 // endregion
