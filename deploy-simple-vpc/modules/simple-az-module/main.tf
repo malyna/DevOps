@@ -12,13 +12,15 @@ data "aws_route_table" "simple-public" {
 }
 
 locals {
-  active = "${var.activate == "true"}"
+  active = "${var.activate == "true" ? 1 : 0}"
+  use_nat_box = "${var.activate == "true" && var.use_nat_gateway != "true" ? 1 : 0}"
+  use_nat_gateway = "${var.activate == "true" && var.use_nat_gateway == "true" ? 1 : 0}"
 }
 
 // region SUBNETS
 
 resource "aws_subnet" "simple-public" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   cidr_block = "${cidrsubnet(data.aws_vpc.selected.cidr_block, 8, var.index * 10) }"
   vpc_id = "${data.aws_vpc.selected.id}"
   availability_zone = "${data.aws_availability_zone.selected.name}"
@@ -30,7 +32,7 @@ resource "aws_subnet" "simple-public" {
 }
 
 resource "aws_subnet" "simple-private" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   cidr_block = "${cidrsubnet(data.aws_vpc.selected.cidr_block, 8, var.index * 10 + 1) }"
   vpc_id = "${data.aws_vpc.selected.id}"
   availability_zone = "${data.aws_availability_zone.selected.name}"
@@ -41,7 +43,7 @@ resource "aws_subnet" "simple-private" {
 }
 
 resource "aws_subnet" "simple-private-db" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   cidr_block = "${cidrsubnet(data.aws_vpc.selected.cidr_block, 8, var.index * 10 + 2) }"
   vpc_id = "${data.aws_vpc.selected.id}"
   availability_zone = "${data.aws_availability_zone.selected.name}"
@@ -54,17 +56,19 @@ resource "aws_subnet" "simple-private-db" {
 // endregion
 
 resource "aws_eip" "simple-nat-ip" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   vpc = true
+
   tags {
     Owner = "${var.owner}"
+    Name = "${var.owner}-eip-${var.name_suffix}"
   }
 }
 
 // region NAT GATEWAY
 
 resource "aws_nat_gateway" "simple-nat-gateway" {
-  count = "${local.active && var.use_nat_gateway == "true" ? 1 : 0}"
+  count = "${local.use_nat_gateway}"
   allocation_id = "${aws_eip.simple-nat-ip.id}"
   subnet_id = "${aws_subnet.simple-public.id}"
   tags {
@@ -77,17 +81,54 @@ resource "aws_nat_gateway" "simple-nat-gateway" {
 
 // region NAT BOX
 
+resource "aws_security_group" "simple-nat-box-sg" {
+  count = "${local.use_nat_box}"
+  name        = "Allow Http to NAT - ${var.name_suffix}"
+  vpc_id      = "${data.aws_vpc.selected.id}"
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "6"
+    cidr_blocks = ["${aws_subnet.simple-private.cidr_block}"]
+  }
+
+  egress {
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    cidr_blocks     = ["0.0.0.0/0"]
+  }
+
+  tags {
+    Owner = "${var.owner}"
+    Name = "${var.owner}-nat-box-sg"
+  }
+}
+
+resource "aws_security_group_rule" "allow_443_in" {
+  count           = "${local.use_nat_box}"
+  type            = "ingress"
+  from_port       = 443
+  to_port         = 443
+  protocol        = "tcp"
+  cidr_blocks     = ["${aws_subnet.simple-private.cidr_block}"]
+  security_group_id = "${aws_security_group.simple-nat-box-sg.id}"
+}
+
 resource "aws_eip_association" "nat-box-eip" {
-  count = "${local.active && var.use_nat_gateway != "true" ? 1 : 0}"
+  count           = "${local.use_nat_box}"
   instance_id   = "${aws_instance.simple-nat-box.id}"
   allocation_id = "${aws_eip.simple-nat-ip.id}"
 }
 
 resource "aws_instance" "simple-nat-box" {
-  count = "${local.active && var.use_nat_gateway != "true" ? 1 : 0}"
+  count           = "${local.use_nat_box}"
   ami = "${var.nat_box_ami}"
-  instance_type = "t2.medium"
+  instance_type = "t2.micro"
   subnet_id = "${aws_subnet.simple-public.id}"
+  source_dest_check = false
+  vpc_security_group_ids = ["${aws_security_group.simple-nat-box-sg.id}"]
   tags {
     Name = "${var.owner}-nat-box-${var.name_suffix}"
   }
@@ -98,7 +139,7 @@ resource "aws_instance" "simple-nat-box" {
 //region ROUTE TABLES
 
 resource "aws_route_table" "simple-private" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   vpc_id = "${data.aws_vpc.selected.id}"
 
   tags {
@@ -122,13 +163,13 @@ resource "aws_route" "nat-instance-route" {
 }
 
 resource "aws_route_table_association" "simple-public-association" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   route_table_id = "${data.aws_route_table.simple-public.id}"
   subnet_id = "${aws_subnet.simple-public.id}"
 }
 
 resource "aws_route_table_association" "simple-private-association" {
-  count = "${local.active ? 1 : 0}"
+  count = "${local.active}"
   route_table_id = "${aws_route_table.simple-private.id}"
   subnet_id = "${aws_subnet.simple-private.id}"
 }
